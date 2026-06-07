@@ -305,6 +305,14 @@ class QQGroupSignPlugin(Star):
         )
         return []
 
+    async def _build_origin_reply(self, event: AstrMessageEvent, message: str):
+        """构造仅回发到指令来源会话的消息"""
+        try:
+            return event.chain_result([Plain(message)])
+        except Exception as e:
+            logger.error(f"构造来源会话回复失败: {e}", exc_info=True)
+            return None
+
     async def _daily_sign_task(self):
         """每日定时打卡任务"""
         try:
@@ -444,13 +452,25 @@ class QQGroupSignPlugin(Star):
                 target_groups = self.whitelist_groups
 
             if not target_groups:
+                reply = await self._build_origin_reply(
+                    event,
+                    "❌ 没有可打卡的群组，请先配置白名单群组",
+                )
+                if reply:
+                    yield reply
                 await self._notify_admin("全群打卡失败：没有可打卡的群组，请先配置白名单群组")
                 return
 
-            await self._sign_target_groups(target_groups)
+            result = await self._sign_target_groups(target_groups)
+            reply = await self._build_origin_reply(event, result)
+            if reply:
+                yield reply
 
         except Exception as e:
             logger.error(f"全群打卡失败: {str(e)}", exc_info=True)
+            reply = await self._build_origin_reply(event, f"❌ 全群打卡失败: {str(e)}")
+            if reply:
+                yield reply
             await self._notify_admin(f"全群打卡异常: {str(e)}")
 
     @filter.command("打卡菜单")
