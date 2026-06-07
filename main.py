@@ -401,15 +401,14 @@ class QQGroupSignPlugin(Star):
                 )
         # 这是一个后台捕获任务，不需要返回任何消息
 
-    @filter.command("打卡")
+    @filter.command("打卡", alias=["群打卡"])
     async def group_sign(self, event: AstrMessageEvent):
-        """在当前群聊执行打卡"""
+        """在当前群聊执行打卡，不在群内回消息"""
         await self._initialized.wait()
         try:
             # 获取当前群聊ID
             group_id = event.get_group_id()
             if not group_id:
-                yield event.chain_result([Plain("❌ 请在群聊中使用此命令")])
                 return
 
             result = await self._perform_group_sign(group_id)
@@ -420,29 +419,23 @@ class QQGroupSignPlugin(Star):
                 self.sign_statistics["success_count"] += 1
                 self.sign_statistics["last_sign_time"] = datetime.now().isoformat()
                 await self._save_config()
-
-                yield event.chain_result([Plain("✅ 打卡成功")])
-
                 # 通知管理员
                 await self._notify_admin(f"群 {group_id} 手动打卡成功")
             else:
                 self.sign_statistics["total_signs"] += 1
                 self.sign_statistics["fail_count"] += 1
                 await self._save_config()
-
-                yield event.chain_result([Plain(f"❌ 打卡失败: {result['message']}")])
                 await self._notify_admin(
                     f"群 {group_id} 手动打卡失败: {result['message']}"
                 )
 
         except Exception as e:
-            error_msg = f"❌ 打卡失败: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            yield event.chain_result([Plain(error_msg)])
+            logger.error(f"手动打卡失败: {str(e)}", exc_info=True)
+            await self._notify_admin(f"群 {event.get_group_id() or 'unknown'} 手动打卡异常: {str(e)}")
 
     @filter.regex(r".*全群打卡.*")
     async def sign_all_groups(self, event: AstrMessageEvent):
-        """打卡所有群聊"""
+        """打卡所有群聊，不在群内回消息"""
         await self._initialized.wait()
         try:
             target_groups = await asyncio.wait_for(self._get_all_groups(), timeout=15)
@@ -451,22 +444,14 @@ class QQGroupSignPlugin(Star):
                 target_groups = self.whitelist_groups
 
             if not target_groups:
-                yield event.chain_result(
-                    [Plain("❌ 没有可打卡的群组，请先配置白名单群组")]
-                )
+                await self._notify_admin("全群打卡失败：没有可打卡的群组，请先配置白名单群组")
                 return
 
-            yield event.chain_result(
-                [Plain(f"🔄 正在为所有群组执行打卡（共 {len(target_groups)} 个群）...")]
-            )
-
-            result = await self._sign_target_groups(target_groups)
-            yield event.chain_result([Plain(result)])
+            await self._sign_target_groups(target_groups)
 
         except Exception as e:
-            error_msg = f"❌ 全群打卡失败: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            yield event.chain_result([Plain(error_msg)])
+            logger.error(f"全群打卡失败: {str(e)}", exc_info=True)
+            await self._notify_admin(f"全群打卡异常: {str(e)}")
 
     @filter.command("打卡菜单")
     async def sign_menu(self, event: AstrMessageEvent):
